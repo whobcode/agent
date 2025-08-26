@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Manager</title>
+  <!-- Visuals kept lightweight; JS is external (see /public/manage.js). -->
+  <style>
+    :root{ --bg:#0b0f14; --panel:#111826; --text:#eaf2ff; --muted:#9fb3c8; --accent:#5b9cff; --accent2:#8b5bff; --ring:rgba(91,156,255,.35) }
+    *{ box-sizing:border-box } body{ margin:0; font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; color:var(--text);
+    background: radial-gradient(1000px 700px at 15% -10%, #0f1730 0%, transparent 55%), radial-gradient(900px 600px at 110% 0%, #241331 0%, transparent 55%), linear-gradient(180deg,var(--bg),#070a0f 60%); min-height:100vh; display:grid; place-items:center; padding:2rem }
+    .wrap{ width:min(1100px,100%); display:grid; gap:1.25rem; grid-template-columns:1.1fr .9fr } @media (max-width:980px){ .wrap{ grid-template-columns:1fr } }
+    .card{ background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:1rem; box-shadow:0 10px 40px rgba(0,0,0,.35); backdrop-filter:blur(6px) }
+    .card h2{ margin:.25rem 0 1rem; font-weight:700 } .badge{ font-size:.75rem; padding:.2rem .5rem; background:rgba(91,156,255,.12); border:1px solid rgba(91,156,255,.25); border-radius:999px; color:#cfe1ff }
+    label{ font-size:.9rem; color:var(--muted); margin-top:.75rem; display:block } select,input,button,textarea{ width:100%; margin-top:.35rem; padding:.7rem .8rem; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:#0f1522; color:var(--text); outline:none; transition:box-shadow .15s,border-color .15s }
+    select:focus,input:focus,textarea:focus{ box-shadow:0 0 0 3px var(--ring); border-color:var(--accent) } textarea{ resize:vertical; min-height:104px }
+    .row{ display:grid; gap:.75rem; grid-template-columns:1fr 1fr } @media (max-width:560px){ .row{ grid-template-columns:1fr } }
+    .btn{ cursor:pointer; font-weight:700; letter-spacing:.2px; border:none; background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#fff; padding:.7rem .8rem; border-radius:12px }
+    .btn:hover{ filter:brightness(1.06) }
+    .log{ white-space:pre-wrap; font-family:ui-monospace,Menlo,Consolas,monospace; background:#0b1120; border-radius:12px; padding:1rem; min-height:180px; border:1px solid rgba(255,255,255,.08); overflow:auto }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h2>Model & Agent Setup <span class="badge" id="status">idle</span></h2>
+      <div class="row">
+        <div>
+          <label for="model">Choose Model</label>
+          <select id="model"></select>
+        </div>
+        <div>
+          <label for="agentId">Agent ID</label>
+          <input id="agentId" placeholder="agent_..." />
+        </div>
+      </div>
+      <label for="prompt">System Prompt</label>
+      <textarea id="prompt" placeholder="You are a helpful agent.">You are a helpful agent.</textarea>
+      <div class="row">
+        <button class="btn" id="btnCreate">Create Agent</button>
+        <button class="btn" id="btnReload">Reload Models</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Chat</h2>
+      <label for="userInput">User Message</label>
+      <input id="userInput" placeholder="Ask something..." />
+      <div class="row">
+        <button class="btn" id="btnSend">Send to Agent</button>
+        <button class="btn" id="btnClear">Clear Log</button>
+      </div>
+      <div class="log" id="output"></div>
+    </section>
+  </div>
+
+  <!-- Frontend logic lives in /public/manage.js (kept out of HTML to avoid long inline JS) -->
+  <script src="/manage.js"></script>
+</body>
+</html>
+
+
+---
+
+# Public: `public/manage.js`
+
+```js
+// Minimal UI glue that talks to Worker APIs at /api/models and /api/chat
+// NOTE: Server endpoints implemented in src/index.js; agent logic in src/aiworker_js.js
+
+const els = {
+  model: document.getElementById('model'),
+  agentId: document.getElementById('agentId'),
+  prompt: document.getElementById('prompt'),
+  userInput: document.getElementById('userInput'),
+  output: document.getElementById('output'),
+  status: document.getElementById('status'),
+  btnCreate: document.getElementById('btnCreate'),
+  btnReload: document.getElementById('btnReload'),
+  btnSend: document.getElementById('btnSend'),
+  btnClear: document.getElementById('btnClear'),
+};
+
+function setStatus(s){ els.status.textContent = s }
+function log(x){ els.output.textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2) }
+function clearLog(){ els.output.textContent = '' }
+
+async function listModels(){
+  setStatus('loading');
+  const res = await fetch('/api/models');
+  const models = await res.json();
+  els.model.innerHTML = '';
+  for (const m of models){
+    const opt = document.createElement('option');
+    opt.value = m.id; opt.textContent = `${m.label} — ${m.provider}`;
+    els.model.appendChild(opt);
+  }
+  setStatus('ready');
+}
+
+async function createAgent(){
+  setStatus('creating');
+  const model = els.model.value;
+  const prompt = els.prompt.value;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create_agent', config: { model, systemPrompt: prompt } })
+  });
+  const json = await res.json();
+  if (json.id) els.agentId.value = json.id;
+  log(json); setStatus('ready');
+}
+
+async function useAgent(){
+  setStatus('chatting');
+  const id = els.agentId.value.trim();
+  if (!id){ log({ error: 'Missing agent id' }); setStatus('ready'); return; }
+  const input = els.userInput.value;
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'use_agent', config: { id }, prompt: input })
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let acc = '';
+  while(true){
+    const { done, value } = await reader.read();
+    if(done) break;
+    acc += decoder.decode(value, { stream: true });
+    els.output.textContent = acc;
+  }
+  setStatus('ready');
+}
+
+// Wire events
+els.btnCreate.addEventListener('click', createAgent);
+els.btnReload.addEventListener('click', listModels);
+els.btnSend.addEventListener('click', useAgent);
+els.btnClear.addEventListener('click', clearLog);
+
+listModels();
+```
+
+---
+
+# Worker: `src/index.js`
+
+```js
+import { MyAgent } from './aiworker_js.js';
+
+function corsHeaders(type = 'application/json'){
+  return {
+    'Content-Type': type,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Service-Key',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  };
+}
+
+export default {
+  async fetch(request, env, ctx){
+    const url = new URL(request.url);
+
+    if (request.method === 'OPTIONS'){
+      return new Response(null, { status: 204, headers: corsHeaders() });
+    }
+
+    if (url.pathname === '/api/models'){
+      return new Response(JSON.stringify([
+        { id: 'deepseek/deepseek-v3.1', label: 'DeepSeek v3.1', provider: 'AI Gateway' },
+        { id: 'huggingface/zephyr-7b', label: 'Zephyr-7B', provider: 'AI Gateway' },
+        { id: 'openrouter/mistral-7b-instruct', label: 'Mistral-7B (Instruct)', provider: 'OpenRouter' },
+        { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Workers AI Llama 3.3 70B', provider: 'Workers AI' },
+      ]), { headers: corsHeaders() });
+    }
+
+    if (url.pathname === '/api/chat'){
+      const agent = new MyAgent({
+        systemPrompt: env.DEFAULT_SYSTEM_PROMPT,
+        model: env.DEFAULT_MODEL_ID,
+      });
+      return agent.handleRequest({ request, env });
+    }
+
+    if (url.pathname === '/manage'){
+      // Serve the standalone UI from /public/manage.html
+      const rewritten = new Request(new URL('/manage.html', url), request);
+      return env.ASSETS.fetch(rewritten);
+    }
+
+    // Static assets (incl. /manage.html and /manage.js)
+    if (url.pathname === '/' || !url.pathname.startsWith('/api/')){
+      return env.ASSETS.fetch(request);
+    }
+
+    return new Response('Not Found', { status: 404, headers: corsHeaders('text/plain') });
+  }
+};
+```
+
+---
+
+# Worker: `src/aiworker_js.js`
+
+```js
+import { Agent } from 'agents';
+
+// MyAgent: routes to Cloudflare AI Gateway (compat), OpenRouter, or Workers AI; supports child agents & geo logging
+export class MyAgent extends Agent {
+  constructor(config = {}){
+    super(config);
+    this.model = config.model || 'deepseek/deepseek-v3.1';
+    this.systemPrompt = config.systemPrompt || 'You are a cool, intelligent, witty AI assistant.';
+    this.children = new Map();
+  }
+
+  async handleRequest({ request, env }){
+    // CORS preflight handled at router; keep here if called directly
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: this._corsHeaders() });
+
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const { prompt, messages: userMessages, action, config = {}, model } = body;
+
+    // Geo logging via CF headers
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const cc = request.headers.get('CF-IPCountry') || 'unknown';
+    console.log(`action=${action ?? 'chat'} model=${model ?? this.model} ip=${ip} cc=${cc}`);
+
+    if (action === 'create_agent' && config){
+      const id = `agent_${Date.now()}`;
+      const child = new MyAgent(config);
+      this.children.set(id, child);
+      return new Response(JSON.stringify({ success:true, id }), { headers: this._corsHeaders() });
+    }
+
+    if (action === 'use_agent' && config?.id){
+      const child = this.children.get(config.id);
+      if (!child) return new Response(JSON.stringify({ error:'Agent not found' }), { status:404, headers: this._corsHeaders() });
+      return child.handleRequest({ request, env });
+    }
+
+    const messages = userMessages ?? [
+      { role: 'system', content: this.systemPrompt },
+      { role: 'user', content: prompt ?? '' },
+    ];
+
+    const selected = model ?? this.model;
+    const provider = this._providerFromModel(selected, config.provider);
+
+    try {
+      let stream;
+      if (provider === 'openrouter'){
+        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+          body: JSON.stringify({ model: selected, messages, stream: true }),
+        });
+        if (!resp.ok) throw new Error(`OpenRouter ${resp.status}: ${await resp.text()}`);
+        stream = resp.body;
+      } else if (provider === 'gateway'){
+        const endpoint = `https://gateway.ai.cloudflare.com/v1/${env.AI_ACCOUNT_ID}/${env.AI_GATEWAY_NAME}/compat/chat/completions`;
+        const body = { model: selected, messages, stream: true };
+        const apiKey = this._forwardApiKey(selected, env);
+        if (apiKey) body.apiKey = apiKey; // optional vendor key passthrough if not configured in Gateway
+        const resp = await fetch(endpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(env.SERVICE_API_KEY ? { 'X-Service-Key': env.SERVICE_API_KEY } : {}) },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) throw new Error(`Gateway ${resp.status}: ${await resp.text()}`);
+        stream = resp.body;
+      } else { // workers-ai fallback for @cf/*
+        const aiResp = await env.AI.run(selected, { messages, stream: true });
+        stream = aiResp; // ReadableStream
+      }
+
+      return new Response(stream, { headers: this._corsHeaders('application/x-ndjson') });
+    } catch (err) {
+      console.error('agent error', err);
+      return new Response(JSON.stringify({ error: String(err?.message || err) }), { status: 500, headers: this._corsHeaders() });
+    }
+  }
+
+  _providerFromModel(model, explicit){
+    if (explicit) return explicit;
+    if (model?.startsWith('openrouter/')) return 'openrouter';
+    if (model?.startsWith('@cf/')) return 'workers-ai';
+    if (model?.includes('/')) return 'gateway'; // e.g., deepseek/..., huggingface/...
+    return 'gateway';
+  }
+
+  _forwardApiKey(model, env){
+    if (model?.startsWith('deepseek/')) return env.DEEPSEEK_API_KEY || null;
+    if (model?.startsWith('huggingface/')) return env.HF_API_KEY || null;
+    if (model?.startsWith('openai/')) return env.OPENAI_API_KEY || null;
+    return null;
+  }
+
+  _corsHeaders(type = 'application/json'){
+    return {
+      'Content-Type': type,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Service-Key',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    };
+  }
+}
+```
+
+---
+
+## Notes
+
+* **No inline JS** in `manage.html`. The only script tag points to **`/manage.js`**, which lives in **`public/manage.js`**.
+* Server routes (`/api/models`, `/api/chat`, `/manage`) are in **`src/index.js`**.
+* Agent logic (model routing, child agents, geo logging) is in **`src/aiworker_js.js`**.
+* `wrangler.toml` must have an `[assets]` section with `binding = "ASSETS"` and `directory = "public"` (already provided in your updated file).
+

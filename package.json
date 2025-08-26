@@ -1,0 +1,17 @@
+{
+	"name": "chat4",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"wrangler": "^4.32.0"
+	},
+	"dependencies": {
+		"agents": "^0.0.113"
+	}
+}
