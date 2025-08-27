@@ -1,0 +1,57 @@
+{
+  "name": "chat4",
+  "main": "src/index.ts",
+  "workers_dev": true,
+  "compatibility_date": "2025-07-21",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "routes": [
+    {
+      "pattern": "https://chat4.tru-bone.workers.dev/",
+      "zone_name": "hwmnbn.me"
+    },
+    {
+      "pattern": "http://chat4.tru-bone.workers.dev/",
+      "zone_name": "hwmnbn.me"
+    }
+  ],
+  "placement": {
+    "mode": "smart"
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MyAgent"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true
+    }
+  },
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "vars": {
+    "AI_GATEWAY_NAME": "moongate",
+    "DEFAULT_MODEL_ID": "deepseek-v3.1",
+    "DEFAULT_SYSTEM_PROMPT": "You are a helpful AI agent.",
+    "AI_GATEWAY_ENDPOINT": "https://gateway.ai.cloudflare.com/v1/moongate",
+    "AI_ACCOUNT_ID": "YOUR_CLOUDFLARE_ACCOUNT_ID"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MyAgent",
+        "class_name": "MyAgent"
+      }
+    ]
+  }
+}
