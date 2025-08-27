@@ -8,11 +8,11 @@ declare namespace Cloudflare {
 		DEFAULT_MODEL_ID: "deepseek-v3.1";
 		DEFAULT_SYSTEM_PROMPT: "You are a helpful AI agent.";
 		AI_GATEWAY_ENDPOINT: "https://gateway.ai.cloudflare.com/v1/moongate";
-		AI_ACCOUNT_ID: "YOUR_CLOUDFLARE_ACCOUNT_ID";
+		AI_ACCOUNT_ID: "93e0a6dda0f48d77b387cae708297820";
 		STRIPE_PRICE_ID: "YOUR_STRIPE_PRICE_ID";
-		AUTORAG_PROJECT_NAME: "YOUR_AUTORAG_PROJECT_NAME";
-		MyAgent: DurableObjectNamespace<import("./src/index").MyAgent>;
-		MCP: DurableObjectNamespace<import("./src/index").MCPAgent>;
+		AUTORAG_PROJECT_NAME: "whoblevi";
+		MyAgent: DurableObjectNamespace<import("./src/index.ts").MyAgent>;
+		MCP: DurableObjectNamespace<import("./src/index.ts").MCPAgent>;
 		AGENT_BUCKET: R2Bucket;
 		DB: D1Database;
 		VECTORIZE_INDEX: VectorizeIndex;

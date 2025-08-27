@@ -1,7 +1,7 @@
 {
   "name": "chat4",
   "main": "src/index.ts",
-  "workers_dev": true,
+  "workers_dev": false,
   "compatibility_date": "2025-07-21",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "routes": [
@@ -23,14 +23,11 @@
       "new_classes": [
         "MyAgent",
         "MCPAgent"
-      ],
-      "deleted_classes": [
-        "PlaywrightMCP"
-      ]
+      ]      
     }
   ],
   "assets": {
-    "directory": "public",
+    "directory": "public/",
     "binding": "ASSETS"
   },
   "ai": {
