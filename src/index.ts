@@ -1,7 +1,7 @@
 import { routeAgentRequest } from 'agents';
 import { MyAgent, Env } from './agent';
 import Stripe from 'stripe';
-import { ingestQuery } from './rag';
+// Removed unused import: import { ingestQuery } from './rag';
 
 export { MyAgent };
 
@@ -104,10 +104,11 @@ export default {
         const { query } = await request.json<{ query?: string }>();
         if (!query) return new Response(JSON.stringify({ error: 'Query is required.' }), { status: 400 });
 
-        // Asynchronously trigger the RAG ingestion process. We don't need to wait for it.
-        ctx.waitUntil(ingestQuery(query, env));
+        // The AutoRAG pipeline ingests automatically. For now, we just log the feedback event.
+        // In a more advanced system, this could write to an analytics engine or a D1 table for review.
+        console.log(`Feedback received for query: "${query}" from user: ${userId}`);
 
-        return new Response(JSON.stringify({ success: true, message: 'Feedback received and ingestion process started.' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        return new Response(JSON.stringify({ success: true, message: 'Feedback received.' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     if (url.pathname === '/api/get-agents') {
