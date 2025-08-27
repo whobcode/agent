@@ -1,10 +1,13 @@
 import { Agent, AgentNamespace } from 'agents';
 
-// Define the environment bindings, including secrets
+// Define the environment bindings, including secrets and storage
 export interface Env {
+  // Bindings
   MyAgent: AgentNamespace<MyAgent>;
   ASSETS: Fetcher;
   AI: Ai;
+  DB: D1Database;
+  SESSIONS: KVNamespace;
 
   // Secrets
   DEEPSEEK_API_KEY: string;
