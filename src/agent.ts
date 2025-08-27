@@ -48,14 +48,10 @@ type RequestBody = ChatRequestBody | TaskRequestBody;
 export class MyAgent extends Agent<Env> {
 
   async delegateTask(taskDescription: string): Promise<Response> {
-    // ... (existing delegateTask logic)
+    // This is the correct approach for agent-to-agent communication (RPC)
     const subAgent = this.env.MyAgent.get(this.env.MyAgent.newUniqueId());
-    const taskRequest = new Request(`https://agent.internal/task`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'task', description: taskDescription } as TaskRequestBody),
-    });
-    return subAgent.onRequest(taskRequest);
+    const result = await subAgent.runTask({ type: 'task', description: taskDescription });
+    return new Response(JSON.stringify(result), { headers: this._corsHeaders() });
   }
 
   async onRequest(request: Request): Promise<Response> {
@@ -63,13 +59,17 @@ export class MyAgent extends Agent<Env> {
     if (request.method === 'OPTIONS') return new Response(null, { headers: this._corsHeaders() });
     let body: RequestBody;
     try { body = await request.json(); } catch { return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: this._corsHeaders() });}
-    if (body.type === 'task') return this.handleDelegatedTask(body);
+
+    if (body.type === 'task') {
+        const result = await this.runTask(body);
+        return new Response(JSON.stringify(result), { headers: this._corsHeaders() });
+    }
     return this.handleUserChat(request, body);
   }
 
-  private async handleDelegatedTask(task: TaskRequestBody): Promise<Response> {
+  async runTask(task: TaskRequestBody): Promise<{ success: boolean; message: string }> {
     // ... (existing handleDelegatedTask logic)
-    return new Response(JSON.stringify({ success: true, message: `Sub-agent ${this.id} completed task: ${task.description}`}), { headers: { 'Content-Type': 'application/json' }});
+    return { success: true, message: `Sub-agent ${this.id} completed task: ${task.description}`};
   }
 
   /**
