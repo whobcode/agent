@@ -1,9 +1,9 @@
 import { routeAgentRequest } from 'agents';
 import { MyAgent, Env } from './agent';
+import { MCPAgent } from './mcp';
 import Stripe from 'stripe';
-// Removed unused import: import { ingestQuery } from './rag';
 
-export { MyAgent };
+export { MyAgent, MCPAgent };
 
 // --- Constants ---
 const ADMIN_USERNAME = "admin";
@@ -105,7 +105,6 @@ export default {
         if (!query) return new Response(JSON.stringify({ error: 'Query is required.' }), { status: 400 });
 
         // The AutoRAG pipeline ingests automatically. For now, we just log the feedback event.
-        // In a more advanced system, this could write to an analytics engine or a D1 table for review.
         console.log(`Feedback received for query: "${query}" from user: ${userId}`);
 
         return new Response(JSON.stringify({ success: true, message: 'Feedback received.' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
