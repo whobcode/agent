@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In</title>
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+</head>
+<body>
+    <header>
+        <h1>Log In</h1>
+        <p>Access your account.</p>
+    </header>
+    <main>
+        <form id="login-form">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+            <button type="submit">Log In</button>
+        </form>
+        <p id="error-message" style="color: red;"></p>
+        <p>Don't have an account? <a href="/signup.html">Sign up</a></p>
+    </main>
+    <footer>
+        <p>AI Agent Platform</p>
+    </footer>
+    <script src="/auth.js"></script>
+</body>
+</html>

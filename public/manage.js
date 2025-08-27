@@ -1,101 +1,148 @@
-// public/manage.js
-// No addEventListener; bind via DOM properties per project standards.
-(function () {
-  var model = document.getElementById('model');
-  var agentId = document.getElementById('agentId');
-  var prompt = document.getElementById('prompt');
-  var userInput = document.getElementById('userInput');
-  var output = document.getElementById('output');
-  var statusEl = document.getElementById('status');
-  var btnCreate = document.getElementById('btnCreate');
-  var btnReload = document.getElementById('btnReload');
-  var btnSend = document.getElementById('btnSend');
-  var btnClear = document.getElementById('btnClear');
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Element Selectors ---
+    const elements = {
+        logoutBtn: document.getElementById('logout-btn'),
+        agentList: document.getElementById('agent-list'),
+        createAgentForm: document.getElementById('create-agent-form'),
+        agentNameInput: document.getElementById('agent-name'),
+        agentSelect: document.getElementById('agent-select'),
+        modelSelect: document.getElementById('model-select'),
+        userInput: document.getElementById('user-input'),
+        sendBtn: document.getElementById('send-btn'),
+        output: document.getElementById('output'),
+        status: document.getElementById('status'),
+    };
 
-  function setStatus(s){ if (statusEl) statusEl.textContent = s; }
-  function log(x){ if (output) output.textContent = (typeof x === 'string') ? x : JSON.stringify(x, null, 2); }
-  function clearLog(){ if (output) output.textContent = ''; }
+    // --- Authentication ---
+    const token = localStorage.getItem('session_token');
+    if (!token) {
+        window.location.href = '/login.html';
+        return; // Stop script execution
+    }
 
-  async function listModels(){
-    setStatus('loading');
-    try {
-      var res = await fetch('/api/models');
-      if (!res.ok) throw new Error('models ' + res.status);
-      var models = await res.json();
-      if (model){
-        model.innerHTML = '';
-        for (var i = 0; i < models.length; i++){
-          var m = models[i];
-          var opt = document.createElement('option');
-          opt.value = m.id;
-          opt.textContent = m.label + ' — ' + m.provider;
-          model.appendChild(opt);
+    const authHeader = { 'Authorization': `Bearer ${token}` };
+
+    // --- State ---
+    let myAgents = [];
+
+    // --- Functions ---
+    const setStatus = (text) => elements.status.textContent = `Status: ${text}`;
+
+    const fetchAndPopulate = async (endpoint, selectElement, valueField, textField, defaultOption) => {
+        try {
+            const response = await fetch(endpoint, { headers: authHeader });
+            if (!response.ok) {
+                if (response.status === 401) window.location.href = '/login.html';
+                throw new Error(`Failed to fetch from ${endpoint}`);
+            }
+            const data = await response.json();
+            selectElement.innerHTML = `<option value="">-- ${defaultOption} --</option>`;
+            for (const item of data) {
+                const option = document.createElement('option');
+                option.value = item[valueField];
+                option.textContent = item[textField];
+                selectElement.appendChild(option);
+            }
+            return data;
+        } catch (error) {
+            console.error(error);
+            setStatus(`Error loading ${defaultOption}`);
         }
-      }
-    } catch (err) {
-      log({ error: String(err && err.message || err) });
-    } finally {
-      setStatus('ready');
-    }
-  }
+    };
 
-  async function createAgent(){
-    setStatus('creating');
-    try {
-      var sel = model ? model.value : '';
-      var sys = prompt ? prompt.value : '';
-      var res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create_agent', config: { model: sel, systemPrompt: sys } })
-      });
-      var json = await res.json();
-      if (agentId && json.id) agentId.value = json.id;
-      log(json);
-    } catch (err) {
-      log({ error: String(err && err.message || err) });
-    } finally {
-      setStatus('ready');
-    }
-  }
+    const listMyAgents = async () => {
+        myAgents = await fetchAndPopulate('/api/get-agents', elements.agentSelect, 'id', 'name', 'Select an agent');
+        elements.agentList.innerHTML = '';
+        if (myAgents && myAgents.length > 0) {
+            myAgents.forEach(agent => {
+                const li = document.createElement('li');
+                li.textContent = `${agent.name} (ID: ${agent.id.substring(0, 8)}...)`;
+                elements.agentList.appendChild(li);
+            });
+        } else {
+            elements.agentList.innerHTML = '<li>No agents created yet.</li>';
+        }
+    };
 
-  async function useAgent(){
-    var id = agentId ? agentId.value.trim() : '';
-    if (!id){ log({ error: 'Missing agent id' }); return; }
-    setStatus('chatting');
-    try {
-      var input = userInput ? userInput.value : '';
-      var res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'use_agent', config: { id: id }, prompt: input })
-      });
-      if (!res.body){ log({ error: 'No response stream' }); return; }
-      var reader = res.body.getReader();
-      var decoder = new TextDecoder();
-      var acc = '';
-      while (true){
-        var step = await reader.read();
-        if (step.done) break;
-        acc += decoder.decode(step.value, { stream: true });
-        if (output) output.textContent = acc;
-      }
-    } catch (err) {
-      log({ error: String(err && err.message || err) });
-    } finally {
-      setStatus('ready');
-    }
-  }
+    const listModels = () => fetchAndPopulate('/api/models', elements.modelSelect, 'id', 'label', 'Select a model');
 
-  // Optional UX: Enter to send (no addEventListener; property handler is OK)
-  if (userInput) userInput.onkeydown = function (e){ if (e.key === 'Enter' && !e.shiftKey){ if (btnSend) btnSend.onclick(); } };
+    const handleCreateAgent = async (event) => {
+        event.preventDefault();
+        const agentName = elements.agentNameInput.value.trim();
+        if (!agentName) return;
 
-  // Bind via DOM properties only
-  if (btnCreate) btnCreate.onclick = createAgent;
-  if (btnReload) btnReload.onclick = listModels;
-  if (btnSend) btnSend.onclick = useAgent;
-  if (btnClear) btnClear.onclick = clearLog;
+        setStatus('Creating agent...');
+        try {
+            const response = await fetch('/api/create-agent', {
+                method: 'POST',
+                headers: { ...authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: agentName }),
+            });
+            const result = await response.json();
+            if (response.ok) {
+                elements.agentNameInput.value = '';
+                await listMyAgents();
+                setStatus('Agent created successfully!');
+            } else {
+                throw new Error(result.error || 'Failed to create agent.');
+            }
+        } catch (error) {
+            setStatus(error.message);
+        }
+    };
 
-  // Init
-  listModels();
-})();
+    const handleSendMessage = async () => {
+        const agentId = elements.agentSelect.value;
+        const model = elements.modelSelect.value;
+        const message = elements.userInput.value;
+
+        if (!agentId || !model || !message) {
+            alert('Please select an agent, a model, and enter a message.');
+            return;
+        }
+
+        setStatus('Sending message...');
+        elements.output.textContent = '';
+
+        try {
+            const response = await fetch(`/agents/MyAgent/${agentId}`, {
+                method: 'POST',
+                headers: { ...authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: message }] }),
+            });
+
+            if (!response.body) throw new Error('No response body');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                accumulatedText += decoder.decode(value, { stream: true });
+                elements.output.textContent = accumulatedText;
+            }
+            setStatus('Response complete.');
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            setStatus(`Error: ${error.message}`);
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('session_token');
+        window.location.href = '/login.html';
+    };
+
+    // --- Event Listeners ---
+    elements.createAgentForm.addEventListener('submit', handleCreateAgent);
+    elements.sendBtn.addEventListener('click', handleSendMessage);
+    elements.logoutBtn.addEventListener('click', handleLogout);
+
+    // --- Initial Load ---
+    setStatus('Loading...');
+    Promise.all([listMyAgents(), listModels()]).then(() => {
+        setStatus('Ready');
+    });
+});

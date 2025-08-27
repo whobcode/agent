@@ -17,21 +17,6 @@
   "placement": {
     "mode": "smart"
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": ["MyAgent"]
-    }
-  ],
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1,
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 1,
-      "invocation_logs": true
-    }
-  },
   "assets": {
     "directory": "public",
     "binding": "ASSETS"
@@ -53,5 +38,20 @@
         "class_name": "MyAgent"
       }
     ]
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chat-db",
+      "database_id": "YOUR_D1_DATABASE_ID",
+      "preview_database_id": "YOUR_D1_PREVIEW_DATABASE_ID"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "YOUR_KV_NAMESPACE_ID",
+      "preview_id": "YOUR_KV_PREVIEW_NAMESPACE_ID"
+    }
+  ]
 }
