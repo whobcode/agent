@@ -9,7 +9,7 @@
     body { display: block; max-width: 1200px; margin: auto; }
     .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     .card { padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
-    #output { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 8px; min-height: 100px; }
+    #output, #delegate-output { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 8px; min-height: 100px; }
     #upgrade-section { margin-top: 1rem; padding: 1rem; border: 1px solid orange; border-radius: 8px; background: #fffbe6; display: none; }
   </style>
 </head>
@@ -43,15 +43,11 @@
       <h2>Chat with Agent</h2>
       <p id="status" style="font-weight: bold;">Status: Idle</p>
 
-      <label for="agent-select">Select Agent to Chat With</label>
-      <select id="agent-select" required>
-        <option value="">--No agents available--</option>
-      </select>
+      <label for="agent-select">Select Agent</label>
+      <select id="agent-select" required></select>
 
       <label for="model-select">Select Model</label>
-      <select id="model-select" required>
-          <!-- Models will be populated here -->
-      </select>
+      <select id="model-select" required></select>
 
       <label for="user-input">Your Message</label>
       <textarea id="user-input" placeholder="Ask your agent something..."></textarea>
@@ -60,6 +56,16 @@
 
       <h3>Response</h3>
       <div id="output"></div>
+
+      <hr>
+
+      <h2>Delegate a Task</h2>
+      <label for="task-description">Task Description</label>
+      <textarea id="task-description" placeholder="e.g., 'Summarize the latest AI news'"></textarea>
+      <button id="delegate-btn">Delegate Task to Selected Agent</button>
+      <h3>Delegation Result</h3>
+      <div id="delegate-output"></div>
+
     </section>
   </main>
 
