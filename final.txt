@@ -1,0 +1,27 @@
+Final Setup Instructions:
+
+Update wrangler.jsonc Placeholders:
+
+Replace YOUR_CLOUDFLARE_ACCOUNT_ID with your actual Cloudflare Account ID.
+Replace YOUR_D1_DATABASE_ID and YOUR_KV_NAMESPACE_ID with the IDs you'll get in the next steps.
+Replace YOUR_STRIPE_PRICE_ID with a Price ID from your Stripe dashboard.
+Replace YOUR_AUTORAG_PROJECT_NAME with the name of the AutoRAG project you create in the Cloudflare dashboard.
+Create Cloudflare Resources (via command line):
+
+D1 Database: npx wrangler d1 create chat-db (copy the database_id into wrangler.jsonc).
+D1 Schema: npx wrangler d1 execute chat-db --file=src/schema.sql
+KV Namespace: npx wrangler kv:namespace create SESSIONS (copy the id into wrangler.jsonc).
+R2 Bucket: npx wrangler r2 bucket create agent-bucket
+Set Secrets (via command line):
+
+npx wrangler secret put STRIPE_API_KEY
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
+npx wrangler secret put OPENAI_API_KEY
+(Optional) npx wrangler secret put DEEPSEEK_API_KEY
+(Optional) npx wrangler secret put SERVICE_API_KEY
+Configure Admin User:
+
+If you want your admin username to be something other than admin, change the ADMIN_USERNAME constant at the top of src/index.ts. The first user to sign up with this username gets admin privileges.
+Once these steps are complete, you can run npm install and then npx wrangler dev to start the local development server, or npx wrangler deploy to deploy it to your Cloudflare account.
+
+It has been a pleasure working on this exciting and ambitious project with you. If you have any other questions or need further assistance, please let me know!

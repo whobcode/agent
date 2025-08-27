@@ -58,14 +58,14 @@
     {
       "binding": "DB",
       "database_name": "chat-db",
-      "database_id": "YOUR_D1_DATABASE_ID",
+      "database_id": "7e986ff1-1205-417b-84ae-883683e9e82e",
       "preview_database_id": "YOUR_D1_PREVIEW_DATABASE_ID"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "SESSIONS",
-      "id": "YOUR_KV_NAMESPACE_ID",
+      "id": "155713e242ad44fab31732e4dc53907a",
       "preview_id": "YOUR_KV_PREVIEW_NAMESPACE_ID"
     }
   ],
