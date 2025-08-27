@@ -125,12 +125,16 @@ export default {
         const { plan_type, agent_count } = user;
         const limit = plan_type === 'free' ? FREE_PLAN_AGENT_LIMIT : Infinity;
         if (agent_count >= limit) return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade.' }), { status: 403 });
-        const agentId = crypto.randomUUID();
+        
+        // Use the Durable Object namespace to create a valid, unique ID
+        const agentIdObject = env.MyAgent.newUniqueId();
+        const agentId = agentIdObject.toString();
+
         await env.DB.batch([
             env.DB.prepare('INSERT INTO agents (id, user_id, name) VALUES (?, ?, ?)').bind(agentId, userId, agentName),
             env.DB.prepare('UPDATE users SET agent_count = agent_count + 1 WHERE id = ?').bind(userId)
         ]);
-        return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201 });
+        return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     if (url.pathname === '/api/create-checkout-session') {
