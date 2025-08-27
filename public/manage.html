@@ -10,6 +10,7 @@
     .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     .card { padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
     #output { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 8px; min-height: 100px; }
+    #upgrade-section { margin-top: 1rem; padding: 1rem; border: 1px solid orange; border-radius: 8px; background: #fffbe6; display: none; }
   </style>
 </head>
 <body>
@@ -32,6 +33,10 @@
         <input type="text" id="agent-name" placeholder="My new assistant" required>
         <button type="submit">Create Agent</button>
       </form>
+      <div id="upgrade-section">
+        <p id="upgrade-message"></p>
+        <button id="upgrade-btn">Upgrade to Paid Plan</button>
+      </div>
     </section>
 
     <section class="card">

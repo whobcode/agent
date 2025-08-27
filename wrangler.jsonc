@@ -29,7 +29,8 @@
     "DEFAULT_MODEL_ID": "deepseek-v3.1",
     "DEFAULT_SYSTEM_PROMPT": "You are a helpful AI agent.",
     "AI_GATEWAY_ENDPOINT": "https://gateway.ai.cloudflare.com/v1/moongate",
-    "AI_ACCOUNT_ID": "YOUR_CLOUDFLARE_ACCOUNT_ID"
+    "AI_ACCOUNT_ID": "YOUR_CLOUDFLARE_ACCOUNT_ID",
+    "STRIPE_PRICE_ID": "YOUR_STRIPE_PRICE_ID"
   },
   "durable_objects": {
     "bindings": [

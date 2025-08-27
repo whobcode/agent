@@ -1,10 +1,11 @@
 import { routeAgentRequest } from 'agents';
 import { MyAgent, Env } from './agent';
+import Stripe from 'stripe';
 
 export { MyAgent };
 
 // --- Constants ---
-const ADMIN_USERNAME = "admin"; // The user can change this to their desired admin username
+const ADMIN_USERNAME = "admin";
 const FREE_PLAN_AGENT_LIMIT = 3;
 
 // --- Helper Functions ---
@@ -32,28 +33,55 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // --- Stripe Webhook Endpoint (must be handled before auth) ---
+    if (url.pathname === '/api/stripe-webhook') {
+        if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+
+        const stripe = new Stripe(env.STRIPE_API_KEY);
+        const signature = request.headers.get('stripe-signature');
+        const body = await request.text();
+
+        try {
+            const event = await stripe.webhooks.constructEvent(body, signature!, env.STRIPE_WEBHOOK_SECRET);
+
+            if (event.type === 'checkout.session.completed') {
+                const session = event.data.object as Stripe.Checkout.Session;
+                const userId = session.client_reference_id;
+
+                if (userId) {
+                    await env.DB.prepare("UPDATE users SET plan_type = 'paid' WHERE id = ?").bind(userId).run();
+                    console.log(`User ${userId} successfully upgraded to paid plan.`);
+                } else {
+                    console.error('Webhook received for checkout.session.completed without a client_reference_id.');
+                }
+            }
+
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        } catch (err) {
+            console.error('Stripe webhook error:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            return new Response(`Webhook Error: ${errorMessage}`, { status: 400 });
+        }
+    }
+
+    // --- Regular Request Handling ---
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // --- Authentication Endpoints ---
+    // --- Unauthenticated Endpoints ---
     if (url.pathname === '/api/signup') {
+      // ... (existing signup logic)
       if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
       try {
         const { username, password } = await request.json<{ username?: string; password?: string }>();
         if (!username || !password) return new Response(JSON.stringify({ error: 'Username and password are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const existingUser = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
         if (existingUser) return new Response(JSON.stringify({ error: 'Username already taken.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const userId = crypto.randomUUID();
         const hashedPassword = await hashPassword(password);
         const planType = username === ADMIN_USERNAME ? 'admin' : 'free';
-
-        await env.DB.prepare(
-          'INSERT INTO users (id, username, hashed_password, plan_type) VALUES (?, ?, ?, ?)'
-        ).bind(userId, username, hashedPassword, planType).run();
-
+        await env.DB.prepare('INSERT INTO users (id, username, hashed_password, plan_type) VALUES (?, ?, ?, ?)').bind(userId, username, hashedPassword, planType).run();
         return new Response(JSON.stringify({ success: true, userId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       } catch (e) {
         console.error('Signup error:', e);
@@ -62,20 +90,17 @@ export default {
     }
 
     if (url.pathname === '/api/login') {
+      // ... (existing login logic)
       if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
       try {
         const { username, password } = await request.json<{ username?: string; password?: string }>();
         if (!username || !password) return new Response(JSON.stringify({ error: 'Username and password are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const user = await env.DB.prepare('SELECT id, hashed_password FROM users WHERE username = ?').bind(username).first<{ id: string; hashed_password: string }>();
         if (!user) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const hashedPassword = await hashPassword(password);
         if (hashedPassword !== user.hashed_password) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const sessionToken = crypto.randomUUID();
         await env.SESSIONS.put(sessionToken, user.id, { expirationTtl: 86400 });
-
         return new Response(JSON.stringify({ success: true, token: sessionToken }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       } catch (e) {
         console.error('Login error:', e);
@@ -87,40 +112,51 @@ export default {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     const userId = await getUserIdFromToken(token, env);
 
-    if (url.pathname === '/api/get-agents') {
+    if (url.pathname === '/api/get-agents' || url.pathname === '/api/create-agent' || url.pathname === '/api/create-checkout-session') {
         if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
 
+    if (url.pathname === '/api/get-agents') {
         const { results } = await env.DB.prepare('SELECT id, name FROM agents WHERE user_id = ?').bind(userId).all();
         return new Response(JSON.stringify(results), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     if (url.pathname === '/api/create-agent') {
+        // ... (existing create-agent logic)
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
-        if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const { name: agentName } = await request.json<{ name?: string }>();
         if (!agentName) return new Response(JSON.stringify({ error: 'Agent name is required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const user = await env.DB.prepare('SELECT plan_type, agent_count FROM users WHERE id = ?').bind(userId).first<{ plan_type: string; agent_count: number }>();
         if (!user) return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         const { plan_type, agent_count } = user;
         const limit = plan_type === 'free' ? FREE_PLAN_AGENT_LIMIT : Infinity;
-
-        if (agent_count >= limit) {
-            return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade your plan.' }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        }
-
+        if (agent_count >= limit) return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade your plan.' }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         const agentId = crypto.randomUUID();
         await env.DB.batch([
             env.DB.prepare('INSERT INTO agents (id, user_id, name) VALUES (?, ?, ?)').bind(agentId, userId, agentName),
             env.DB.prepare('UPDATE users SET agent_count = agent_count + 1 WHERE id = ?').bind(userId)
         ]);
-
         return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
-    // --- Agent and Asset Endpoints ---
+    if (url.pathname === '/api/create-checkout-session') {
+        if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+        const stripe = new Stripe(env.STRIPE_API_KEY);
+        const origin = request.headers.get('Origin') || new URL(request.url).origin;
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
+            mode: 'subscription',
+            success_url: `${origin}/payment-success.html`,
+            cancel_url: `${origin}/payment-cancel.html`,
+            client_reference_id: userId, // Pass the user ID to the webhook
+        });
+
+        return new Response(JSON.stringify({ sessionId: session.id, url: session.url }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
+
+    // --- Other Endpoints ---
     if (url.pathname.startsWith('/agents/')) {
       return routeAgentRequest(request, env);
     }
