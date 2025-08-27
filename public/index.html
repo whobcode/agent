@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Manager</title>
+  <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+  <style>
+    body { display: block; max-width: 1200px; margin: auto; }
+    .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .card { padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+    #output, #delegate-output { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 8px; min-height: 100px; }
+    #upgrade-section { margin-top: 1rem; padding: 1rem; border: 1px solid orange; border-radius: 8px; background: #fffbe6; display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agent Management</h1>
+    <p>Create, manage, and chat with your agents.</p>
+    <button id="logout-btn">Logout</button>
+  </header>
+
+  <main class="grid-container">
+    <section class="card">
+      <h2>My Agents</h2>
+      <ul id="agent-list">
+        <!-- Agent list will be populated here -->
+      </ul>
+      <hr>
+      <h2>Create New Agent</h2>
+      <form id="create-agent-form">
+        <label for="agent-name">Agent Name</label>
+        <input type="text" id="agent-name" placeholder="My new assistant" required>
+        <button type="submit">Create Agent</button>
+      </form>
+      <div id="upgrade-section">
+        <p id="upgrade-message"></p>
+        <button id="upgrade-btn">Upgrade to Paid Plan</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Chat with Agent</h2>
+      <p id="status" style="font-weight: bold;">Status: Idle</p>
+
+      <label for="agent-select">Select Agent</label>
+      <select id="agent-select" required></select>
+
+      <label for="model-select">Select Model</label>
+      <select id="model-select" required></select>
+
+      <label for="user-input">Your Message</label>
+      <textarea id="user-input" placeholder="Ask your agent something..."></textarea>
+
+      <button id="send-btn">Send Message</button>
+
+      <h3>Response</h3>
+      <div id="output"></div>
+
+      <hr>
+
+      <h2>Delegate a Task</h2>
+      <label for="task-description">Task Description</label>
+      <textarea id="task-description" placeholder="e.g., 'Summarize the latest AI news'"></textarea>
+      <button id="delegate-btn">Delegate Task to Selected Agent</button>
+      <h3>Delegation Result</h3>
+      <div id="delegate-output"></div>
+
+    </section>
+  </main>
+
+  <script src="/manage.js"></script>
+</body>
+</html>
