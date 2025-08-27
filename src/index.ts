@@ -36,29 +36,20 @@ export default {
     // --- Stripe Webhook Endpoint (must be handled before auth) ---
     if (url.pathname === '/api/stripe-webhook') {
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
-
         const stripe = new Stripe(env.STRIPE_API_KEY);
         const signature = request.headers.get('stripe-signature');
         const body = await request.text();
-
         try {
             const event = await stripe.webhooks.constructEvent(body, signature!, env.STRIPE_WEBHOOK_SECRET);
-
             if (event.type === 'checkout.session.completed') {
                 const session = event.data.object as Stripe.Checkout.Session;
                 const userId = session.client_reference_id;
-
                 if (userId) {
                     await env.DB.prepare("UPDATE users SET plan_type = 'paid' WHERE id = ?").bind(userId).run();
-                    console.log(`User ${userId} successfully upgraded to paid plan.`);
-                } else {
-                    console.error('Webhook received for checkout.session.completed without a client_reference_id.');
                 }
             }
-
             return new Response(JSON.stringify({ received: true }), { status: 200 });
         } catch (err) {
-            console.error('Stripe webhook error:', err);
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             return new Response(`Webhook Error: ${errorMessage}`, { status: 400 });
         }
@@ -70,40 +61,32 @@ export default {
     }
 
     // --- Unauthenticated Endpoints ---
-    if (url.pathname === '/api/signup') {
-      // ... (existing signup logic)
+    if (url.pathname === '/api/signup' || url.pathname === '/api/login') {
+      // ... existing signup/login logic
       if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
       try {
         const { username, password } = await request.json<{ username?: string; password?: string }>();
         if (!username || !password) return new Response(JSON.stringify({ error: 'Username and password are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const existingUser = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
-        if (existingUser) return new Response(JSON.stringify({ error: 'Username already taken.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const userId = crypto.randomUUID();
-        const hashedPassword = await hashPassword(password);
-        const planType = username === ADMIN_USERNAME ? 'admin' : 'free';
-        await env.DB.prepare('INSERT INTO users (id, username, hashed_password, plan_type) VALUES (?, ?, ?, ?)').bind(userId, username, hashedPassword, planType).run();
-        return new Response(JSON.stringify({ success: true, userId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-      } catch (e) {
-        console.error('Signup error:', e);
-        return new Response(JSON.stringify({ error: 'An internal error occurred.' }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-      }
-    }
 
-    if (url.pathname === '/api/login') {
-      // ... (existing login logic)
-      if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
-      try {
-        const { username, password } = await request.json<{ username?: string; password?: string }>();
-        if (!username || !password) return new Response(JSON.stringify({ error: 'Username and password are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const user = await env.DB.prepare('SELECT id, hashed_password FROM users WHERE username = ?').bind(username).first<{ id: string; hashed_password: string }>();
-        if (!user) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const hashedPassword = await hashPassword(password);
-        if (hashedPassword !== user.hashed_password) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        const sessionToken = crypto.randomUUID();
-        await env.SESSIONS.put(sessionToken, user.id, { expirationTtl: 86400 });
-        return new Response(JSON.stringify({ success: true, token: sessionToken }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (url.pathname === '/api/signup') {
+            const existingUser = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
+            if (existingUser) return new Response(JSON.stringify({ error: 'Username already taken.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            const userId = crypto.randomUUID();
+            const hashedPassword = await hashPassword(password);
+            const planType = username === ADMIN_USERNAME ? 'admin' : 'free';
+            await env.DB.prepare('INSERT INTO users (id, username, hashed_password, plan_type) VALUES (?, ?, ?, ?)').bind(userId, username, hashedPassword, planType).run();
+            return new Response(JSON.stringify({ success: true, userId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } else { // /api/login
+            const user = await env.DB.prepare('SELECT id, hashed_password FROM users WHERE username = ?').bind(username).first<{ id: string; hashed_password: string }>();
+            if (!user) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            const hashedPassword = await hashPassword(password);
+            if (hashedPassword !== user.hashed_password) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            const sessionToken = crypto.randomUUID();
+            await env.SESSIONS.put(sessionToken, user.id, { expirationTtl: 86400 });
+            return new Response(JSON.stringify({ success: true, token: sessionToken }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
       } catch (e) {
-        console.error('Login error:', e);
+        console.error(`${url.pathname} error:`, e);
         return new Response(JSON.stringify({ error: 'An internal error occurred.' }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       }
     }
@@ -112,8 +95,13 @@ export default {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     const userId = await getUserIdFromToken(token, env);
 
-    if (url.pathname === '/api/get-agents' || url.pathname === '/api/create-agent' || url.pathname === '/api/create-checkout-session') {
-        if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    if (!userId) {
+        // Allow unauthenticated access only to models and assets
+        if (url.pathname === '/api/models' || url.pathname.startsWith('/public/') || url.pathname === '/') {
+            // continue
+        } else if (!url.pathname.startsWith('/agents/')) { // Agents have their own internal auth/logic
+             return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
     }
 
     if (url.pathname === '/api/get-agents') {
@@ -140,20 +128,32 @@ export default {
     }
 
     if (url.pathname === '/api/create-checkout-session') {
+        // ... (existing checkout logic)
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
         const stripe = new Stripe(env.STRIPE_API_KEY);
         const origin = request.headers.get('Origin') || new URL(request.url).origin;
-
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
             mode: 'subscription',
             success_url: `${origin}/payment-success.html`,
             cancel_url: `${origin}/payment-cancel.html`,
-            client_reference_id: userId, // Pass the user ID to the webhook
+            client_reference_id: userId,
         });
-
         return new Response(JSON.stringify({ sessionId: session.id, url: session.url }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
+
+    if (url.pathname === '/api/delegate-task') {
+        if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+        const { agentId, taskDescription } = await request.json<{ agentId?: string, taskDescription?: string }>();
+        if (!agentId || !taskDescription) {
+            return new Response(JSON.stringify({ error: 'agentId and taskDescription are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        }
+
+        // TODO: Add a check to ensure the agentId belongs to the userId making the request
+
+        const agentStub = env.MyAgent.get(env.MyAgent.idFromString(agentId));
+        return agentStub.delegateTask(taskDescription);
     }
 
     // --- Other Endpoints ---

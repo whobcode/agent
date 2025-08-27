@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
         upgradeSection: document.getElementById('upgrade-section'),
         upgradeMessage: document.getElementById('upgrade-message'),
         upgradeBtn: document.getElementById('upgrade-btn'),
+        taskDescription: document.getElementById('task-description'),
+        delegateBtn: document.getElementById('delegate-btn'),
+        delegateOutput: document.getElementById('delegate-output'),
     };
 
     // --- Authentication ---
@@ -68,29 +71,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const listModels = () => fetchAndPopulate('/api/models', elements.modelSelect, 'id', 'label', 'Select a model');
 
     const handleUpgrade = async () => {
+        // ... (existing upgrade logic)
         setStatus('Redirecting to payment...');
         try {
-            const response = await fetch('/api/create-checkout-session', {
-                method: 'POST',
-                headers: authHeader,
-            });
+            const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: authHeader });
             const { url: stripeUrl } = await response.json();
-            if (stripeUrl) {
-                window.location.href = stripeUrl;
-            } else {
-                throw new Error('Could not create payment session.');
-            }
+            if (stripeUrl) window.location.href = stripeUrl;
+            else throw new Error('Could not create payment session.');
         } catch (error) {
             setStatus(error.message);
         }
     };
 
     const handleCreateAgent = async (event) => {
+        // ... (existing create agent logic)
         event.preventDefault();
         elements.upgradeSection.style.display = 'none';
         const agentName = elements.agentNameInput.value.trim();
         if (!agentName) return;
-
         setStatus('Creating agent...');
         try {
             const response = await fetch('/api/create-agent', {
@@ -104,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await listMyAgents();
                 setStatus('Agent created successfully!');
             } else {
-                if (response.status === 403) { // Agent limit reached
+                if (response.status === 403) {
                     elements.upgradeMessage.textContent = result.error;
                     elements.upgradeSection.style.display = 'block';
                 }
@@ -124,13 +122,13 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Please select an agent, a model, and enter a message.');
             return;
         }
-        setStatus('Sending message...');
+        setStatus('Sending chat message...');
         elements.output.textContent = '';
         try {
             const response = await fetch(`/agents/MyAgent/${agentId}`, {
                 method: 'POST',
                 headers: { ...authHeader, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: message }] }),
+                body: JSON.stringify({ type: 'chat', model, messages: [{ role: 'user', content: message }] }),
             });
             if (!response.body) throw new Error('No response body');
             const reader = response.body.getReader();
@@ -149,6 +147,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const handleDelegateTask = async () => {
+        const agentId = elements.agentSelect.value;
+        const taskDescription = elements.taskDescription.value.trim();
+        if (!agentId || !taskDescription) {
+            alert('Please select an agent and enter a task description.');
+            return;
+        }
+        setStatus('Delegating task...');
+        elements.delegateOutput.textContent = '';
+        try {
+            const response = await fetch('/api/delegate-task', {
+                method: 'POST',
+                headers: { ...authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agentId, taskDescription }),
+            });
+            const result = await response.json();
+            elements.delegateOutput.textContent = JSON.stringify(result, null, 2);
+            setStatus('Delegation complete.');
+        } catch (error) {
+            console.error('Delegation error:', error);
+            elements.delegateOutput.textContent = `Error: ${error.message}`;
+            setStatus('Delegation failed.');
+        }
+    };
+
     const handleLogout = () => {
         localStorage.removeItem('session_token');
         window.location.href = '/login.html';
@@ -157,6 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Event Listeners ---
     elements.createAgentForm.addEventListener('submit', handleCreateAgent);
     elements.sendBtn.addEventListener('click', handleSendMessage);
+    elements.delegateBtn.addEventListener('click', handleDelegateTask);
     elements.logoutBtn.addEventListener('click', handleLogout);
     elements.upgradeBtn.addEventListener('click', handleUpgrade);
 
