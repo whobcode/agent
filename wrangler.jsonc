@@ -17,6 +17,14 @@
   "placement": {
     "mode": "smart"
   },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "MyAgent"
+      ]
+    }
+  ],
   "assets": {
     "directory": "public",
     "binding": "ASSETS"
