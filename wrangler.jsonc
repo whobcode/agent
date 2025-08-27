@@ -6,11 +6,11 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "routes": [
     {
-      "pattern": "https://chat4.tru-bone.workers.dev/",
+      "pattern": "https://chat4.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     },
     {
-      "pattern": "http://chat4.tru-bone.workers.dev/",
+      "pattern": "http://chat4.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     }
   ],
