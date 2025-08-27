@@ -19,10 +19,13 @@
   },
   "migrations": [
     {
-      "tag": "v2",
+      "tag": "v3",
       "new_classes": [
         "MyAgent",
         "MCPAgent"
+      ],
+      "deleted_classes": [
+        "PlaywrightMCP"
       ]
     }
   ],
