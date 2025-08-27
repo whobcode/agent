@@ -1,123 +1,72 @@
-import { Agent, AgentNamespace } from "agents";
+name = "chat4"
+main = "src/index.js"
+workers_dev = true
+compatibility_date = "2025-07-21"
+compatibility_flags = [ "nodejs_compat", "global_fetch_strictly_public" ]
 
-export class MyAgent extends Agent {
-  constructor(config) {
-    super(config);
-    this.model = config.model || "@cf/meta/llama-3.1-8b-instruct";
-    this.systemPrompt = config.systemPrompt || "You are a cool, intelligent, witty AI assistant.";
-    this.useOpenAI = config.useOpenAI || false;
-    this.openaiKey = config.openaiKey || null;
-    this.gatewayEndpoint = config.gatewayEndpoint || null;
-    this.children = new Map();
-    this.initAgent();
-  }
+[[routes]]
+pattern = "https://chat4.tru-bone.workers.dev/"
+zone_name = "hwmnbn.me"
 
-  initAgent() {
-    console.log(`🤖 Initializing AI Agent with model: ${this.model}`);
-    this.on('request', this.handleRequest.bind(this));
-    this.on('response', this.handleResponse.bind(this));
-  }
+[[routes]]
+pattern = "http://chat4.tru-bone.workers.dev/"
+zone_name = "hwmnbn.me"
 
-  async handleRequest({ request, env }) {
-    try {
-      const body = await request.json();
-      const { prompt, action, config } = body;
-      const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
-      const clientCountry = request.headers.get("CF-IPCountry") || "unknown";
-      console.log(`📩 Prompt: ${prompt} | 🌍 From IP: ${clientIP}, Country: ${clientCountry}`);
+[placement]
+mode = "smart"
 
-      if (action === "create_agent" && config) {
-        const id = `agent_${Date.now()}`;
-        const newAgent = new MyAgent(config);
-        this.children.set(id, newAgent);
-        return new Response(JSON.stringify({ success: true, id }), { headers: { 'Content-Type': 'application/json' } });
-      }
+[[migrations]]
+new_classes = [ "PlaywrightMCP" ]
+tag = "latest"
 
-      if (action === "use_agent" && config?.id) {
-        const child = this.children.get(config.id);
-        if (!child) return new Response(JSON.stringify({ error: "Agent not found." }), { status: 404 });
-        return await child.handleRequest({ request, env });
-      }
+[observability]
+enabled = true
+head_sampling_rate = 1
 
-      const messages = [
-        { role: 'system', content: this.systemPrompt },
-        { role: 'user', content: prompt }
-      ];
+  [observability.logs]
+  enabled = true
+  head_sampling_rate = 1
+  invocation_logs = true
 
-      let response;
-      if (this.useOpenAI && this.openaiKey) {
-        response = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.openaiKey}`,
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages,
-            stream: true,
-          }),
-        });
-        response = response.body;
-      } else {
-        const aiResponse = await env.AI.run(this.model, { messages, stream: true });
-        response = aiResponse.pipeThrough(new TextDecoderStream()).pipeThrough(new this.SSEToStream()).pipeThrough(new TextEncoderStream());
-      }
+[assets]
+directory = "public"
+binding = "ASSETS"
+[ai]
+binding = "AI"
 
-      return new Response(response, {
-        headers: {
-          'Content-Type': 'application/x-ndjson',
-          'Access-Control-Allow-Origin': '*',
-        }
-      });
-    } catch (error) {
-      console.error('🚨 Error handling request:', error);
-      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
-    }
-  }
+[vars]
+DEEPSEEK_API_KEY = "sk-6db33fafb1c844a4abcf5f054e93fb36"
+AI_GATEWAY_NAME = "moongate"
+DEFAULT_MODEL_ID = "deepseek-v3.1"
+DEFAULT_SYSTEM_PROMPT = "You are a helpful AI agent."
+OPENAI_API_KEY = "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" # if OpenRouter is also OpenAI key based
+AI_GATEWAY_ENDPOINT = "https://gateway.ai.cloudflare.com/v1/moongate"
+HF_API_KEY = ""
+SERVICE_API_KEY = ""
 
-  handleResponse(response) {
-    console.log(`✅ Completed response: ${JSON.stringify(response)}`);
-  }
+[[services]]
+binding = "bolt"
+service = "bolt"
+environment = "production"
 
-  SSEToStream = class extends TransformStream {
-    constructor() {
-      super({
-        transform: (chunk, controller) => this.processChunk(chunk, controller),
-        flush: (controller) => controller.enqueue(this.format({ done: true })),
-      });
-    }
+[[services]]
+binding = "mcpservice"
+service = "playwmcp"
+environment = "production"
+entrypoint = "PlaywrightMCP"
 
-    processChunk(chunk, controller) {
-      chunk.split('data:').forEach(line => {
-        const match = line.match(/{.+?}/);
-        if (match) controller.enqueue(this.format(JSON.parse(match[0])));
-      });
-    }
+[[r2_buckets]]
+binding = "levister"
+bucket_name = "notlevidata"
 
-    format(payload) {
-      return JSON.stringify({ done: false, ...payload }) + '\n';
-    }
-  }
+[[r2_buckets]]
+binding = "whobcode"
+bucket_name = "whobdata"
 
-  setModel(newModel) {
-    console.log(`🔄 Switching model from ${this.model} to ${newModel}`);
-    this.model = newModel;
-  }
+[[durable_objects.bindings]]
+name = "mcp"
+class_name = "PlaywrightMCP"
+script_name = "playwmcp"
 
-  setSystemPrompt(newPrompt) {
-    console.log(`🛠 Updating system prompt.`);
-    this.systemPrompt = newPrompt;
-  }
-
-  enableOpenAI(apiKey) {
-    this.useOpenAI = true;
-    this.openaiKey = apiKey;
-    console.log("🔐 OpenAI integration enabled.");
-  }
-
-  useCloudflareGateway(endpointUrl) {
-    this.gatewayEndpoint = endpointUrl;
-    console.log(`🌐 Using Cloudflare AI Gateway: ${endpointUrl}`);
-  }
-} 
+[browser]
+binding = "render"
