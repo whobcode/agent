@@ -1,13 +1,18 @@
 import { Agent, AgentNamespace } from 'agents';
+import { MCPAgent } from './mcp';
 
 // Define the environment bindings, including secrets and storage
 export interface Env {
   // Bindings
   MyAgent: AgentNamespace<MyAgent>;
+  MCP: AgentNamespace<MCPAgent>;
   ASSETS: Fetcher;
   AI: Ai;
   DB: D1Database;
   SESSIONS: KVNamespace;
+  AGENT_BUCKET: R2Bucket;
+  BROWSER: Fetcher;
+  VECTORIZE_INDEX: VectorizeIndex;
 
   // Secrets
   DEEPSEEK_API_KEY: string;
@@ -22,14 +27,14 @@ export interface Env {
   DEFAULT_SYSTEM_PROMPT: string;
   DEFAULT_MODEL_ID: string;
   STRIPE_PRICE_ID: string;
+  AUTORAG_PROJECT_NAME: string;
 }
 
 // Define the expected request body types
 interface ChatRequestBody {
   type: 'chat';
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
-  model?: string;
-  provider?: 'gateway' | 'openrouter' | 'workers-ai';
+  model?: string; // This will now be used as the 'synthesizer' model
 }
 
 interface TaskRequestBody {
@@ -42,123 +47,106 @@ type RequestBody = ChatRequestBody | TaskRequestBody;
 
 export class MyAgent extends Agent<Env> {
 
-  /**
-   * A public method that allows this agent to delegate a task to a new sub-agent.
-   * This can be called programmatically from another agent or from a Worker.
-   */
   async delegateTask(taskDescription: string): Promise<Response> {
-      console.log(`Agent ${this.id} received delegation request: ${taskDescription}`);
-
-      // 1. Create a new, unique sub-agent to handle the task
-      const subAgentId = this.env.MyAgent.newUniqueId();
-      const subAgent = this.env.MyAgent.get(subAgentId);
-
-      console.log(`Creating sub-agent ${subAgent.id} to handle the task.`);
-
-      // 2. Construct the request to send to the sub-agent
-      const taskRequest = new Request(`https://agent.internal/task`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-              type: 'task',
-              description: taskDescription,
-          } as TaskRequestBody),
-      });
-
-      // 3. Programmatically call the sub-agent's onRequest method
-      // The `agents` runtime routes this call directly to the sub-agent instance.
-      return subAgent.onRequest(taskRequest);
+    // ... (existing delegateTask logic)
+    const subAgent = this.env.MyAgent.get(this.env.MyAgent.newUniqueId());
+    const taskRequest = new Request(`https://agent.internal/task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'task', description: taskDescription } as TaskRequestBody),
+    });
+    return subAgent.onRequest(taskRequest);
   }
 
-  /**
-   * The main entrypoint for all requests to this agent. It now handles both
-   * user-facing chat requests and internal, delegated task requests.
-   */
   async onRequest(request: Request): Promise<Response> {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: this._corsHeaders() });
-    }
-
+    // ... (existing onRequest logic)
+    if (request.method === 'OPTIONS') return new Response(null, { headers: this._corsHeaders() });
     let body: RequestBody;
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: this._corsHeaders() });
-    }
-
-    // Differentiate between a user chat and a delegated task
-    if (body.type === 'task') {
-        return this.handleDelegatedTask(body);
-    } else {
-        return this.handleUserChat(request, body);
-    }
+    try { body = await request.json(); } catch { return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: this._corsHeaders() });}
+    if (body.type === 'task') return this.handleDelegatedTask(body);
+    return this.handleUserChat(request, body);
   }
 
-  /**
-   * Handles a delegated task from another agent.
-   */
   private async handleDelegatedTask(task: TaskRequestBody): Promise<Response> {
-      console.log(`Agent ${this.id} is handling a delegated task: ${task.description}`);
-      // In a real-world scenario, this is where the agent would perform the actual work.
-      // For this example, we'll just return a confirmation.
-      return new Response(JSON.stringify({
-          success: true,
-          message: `Sub-agent ${this.id} completed task: ${task.description}`,
-      }), { headers: { 'Content-Type': 'application/json' }});
+    // ... (existing handleDelegatedTask logic)
+    return new Response(JSON.stringify({ success: true, message: `Sub-agent ${this.id} completed task: ${task.description}`}), { headers: { 'Content-Type': 'application/json' }});
   }
 
   /**
-   * Handles a chat request from an end-user.
+   * Handles a chat request from an end-user by orchestrating a collaborative response.
    */
   private async handleUserChat(request: Request, body: ChatRequestBody): Promise<Response> {
-    const { messages, model, provider } = body;
-    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const cc = request.headers.get('CF-IPCountry') || 'unknown';
-    const selectedModel = model || this.env.DEFAULT_MODEL_ID;
-    console.log(`model=${selectedModel} ip=${ip} cc=${cc}`);
+    const userQuery = body.messages.find(m => m.role === 'user')?.content || '';
+    if (!userQuery) return new Response(JSON.stringify({ error: 'User query not found.' }), { status: 400 });
 
-    const selectedProvider = this._providerFromModel(selectedModel, provider);
+    const mcp = this.env.MCP.get(this.env.MCP.idFromName("mcp-main"));
 
-    try {
-      let stream: ReadableStream;
-      if (selectedProvider === 'openrouter') {
-        const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.env.OPENAI_API_KEY}` },
-          body: JSON.stringify({ model: selectedModel.replace('openrouter/', ''), messages, stream: true }),
-        });
-        if (!resp.ok) throw new Error(`OpenRouter ${resp.status}: ${await resp.text()}`);
-        stream = resp.body;
-      } else if (selectedProvider === 'gateway') {
-        const endpoint = `https://gateway.ai.cloudflare.com/v1/${this.env.AI_ACCOUNT_ID}/${this.env.AI_GATEWAY_NAME}/compat/chat/completions`;
-        const fetchBody = { model: selectedModel, messages, stream: true };
-        const resp = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Service-Key': this.env.SERVICE_API_KEY || '' },
-          body: JSON.stringify(fetchBody),
-        });
-        if (!resp.ok) throw new Error(`Gateway ${resp.status}: ${await resp.text()}`);
-        stream = resp.body;
-      } else { // 'workers-ai'
-        const aiResp = await this.env.AI.run(selectedModel, { messages, stream: true });
-        stream = aiResp;
-      }
-      return new Response(stream, { headers: this._corsHeaders('text/event-stream') });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('Agent error:', errorMsg);
-      return new Response(JSON.stringify({ error: errorMsg }), { status: 500, headers: this._corsHeaders() });
-    }
+    // 1. Get Context from RAG pipeline via MCP
+    const contextResponse = await mcp.fetch(new Request('https://mcp.internal/vectorSearch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool: 'vectorSearch', query: userQuery }),
+    }));
+    const { context } = await contextResponse.json<{ context: string }>();
+    console.log("Orchestrator: Got context from RAG.");
+
+    // 2. Delegate to multiple models in parallel
+    const modelsToQuery = [
+        '@cf/meta/llama-3-8b-instruct',
+        this.env.DEFAULT_MODEL_ID, // deepseek
+    ];
+
+    console.log("Orchestrator: Delegating to parallel models.");
+    const parallelResponses = await Promise.all(modelsToQuery.map(model =>
+        this.getExpertResponse(userQuery, context, model)
+    ));
+
+    // 3. Synthesize the final answer
+    console.log("Orchestrator: Synthesizing final response.");
+    const synthesizerModel = body.model || '@cf/meta/llama-3.1-70b-instruct'; // Use a powerful model for synthesis
+    const synthesisPrompt = this.createSynthesisPrompt(userQuery, context, parallelResponses);
+
+    const finalResponseStream = await this.env.AI.run(synthesizerModel, {
+        messages: [{ role: 'system', content: synthesisPrompt }],
+        stream: true,
+    });
+
+    return new Response(finalResponseStream, { headers: this._corsHeaders('text/event-stream') });
   }
 
-  private _providerFromModel(model: string, explicit?: 'gateway' | 'openrouter' | 'workers-ai'): string {
-    if (explicit) return explicit;
-    if (model.startsWith('openrouter/')) return 'openrouter';
-    if (model.startsWith('@cf/')) return 'workers-ai';
-    return 'gateway';
+  /**
+   * Calls a single AI model with the user's query and RAG context.
+   */
+  private async getExpertResponse(query: string, context: string, model: string): Promise<string> {
+      const prompt = `Context: ${context}\n\nUser Query: ${query}\n\nBased on the context, answer the user's query.`;
+      try {
+          const response = await this.env.AI.run(model, {
+              messages: [{ role: 'system', content: prompt }],
+          });
+          return response.response || `Error from ${model}`;
+      } catch (e) {
+          console.error(`Error from model ${model}:`, e);
+          return `Model ${model} failed to respond.`;
+      }
+  }
+
+  /**
+   * Creates the final prompt for the synthesizer model.
+   */
+  private createSynthesisPrompt(query: string, context: string, responses: string[]): string {
+      let prompt = `You are an expert synthesizer. Your job is to review a user's query, some internal context, and several responses from different AI models. Produce a single, high-quality, comprehensive answer for the user.\n\n`;
+      prompt += `## User's Original Query:\n${query}\n\n`;
+      prompt += `## Internal Context from Knowledge Base:\n${context}\n\n`;
+      prompt += `## Responses from Assistant Models to Review:\n`;
+      responses.forEach((resp, i) => {
+          prompt += `### Response from Model ${i + 1}:\n${resp}\n\n`;
+      });
+      prompt += `## Your Task:\nSynthesize these responses into the best possible answer for the user. Do not mention the different models or the synthesis process. Just provide the final, clean answer.`;
+      return prompt;
   }
 
   private _corsHeaders(contentType = 'application/json'): Record<string, string> {
+    // ... (existing corsHeaders logic)
     return {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',

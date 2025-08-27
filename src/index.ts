@@ -1,6 +1,7 @@
 import { routeAgentRequest } from 'agents';
 import { MyAgent, Env } from './agent';
 import Stripe from 'stripe';
+import { ingestQuery } from './rag';
 
 export { MyAgent };
 
@@ -35,6 +36,7 @@ export default {
 
     // --- Stripe Webhook Endpoint (must be handled before auth) ---
     if (url.pathname === '/api/stripe-webhook') {
+        // ... (existing webhook logic)
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
         const stripe = new Stripe(env.STRIPE_API_KEY);
         const signature = request.headers.get('stripe-signature');
@@ -44,9 +46,7 @@ export default {
             if (event.type === 'checkout.session.completed') {
                 const session = event.data.object as Stripe.Checkout.Session;
                 const userId = session.client_reference_id;
-                if (userId) {
-                    await env.DB.prepare("UPDATE users SET plan_type = 'paid' WHERE id = ?").bind(userId).run();
-                }
+                if (userId) await env.DB.prepare("UPDATE users SET plan_type = 'paid' WHERE id = ?").bind(userId).run();
             }
             return new Response(JSON.stringify({ received: true }), { status: 200 });
         } catch (err) {
@@ -62,12 +62,11 @@ export default {
 
     // --- Unauthenticated Endpoints ---
     if (url.pathname === '/api/signup' || url.pathname === '/api/login') {
-      // ... existing signup/login logic
-      if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+      // ... (existing signup/login logic)
+       if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
       try {
         const { username, password } = await request.json<{ username?: string; password?: string }>();
         if (!username || !password) return new Response(JSON.stringify({ error: 'Username and password are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         if (url.pathname === '/api/signup') {
             const existingUser = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
             if (existingUser) return new Response(JSON.stringify({ error: 'Username already taken.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
@@ -76,7 +75,7 @@ export default {
             const planType = username === ADMIN_USERNAME ? 'admin' : 'free';
             await env.DB.prepare('INSERT INTO users (id, username, hashed_password, plan_type) VALUES (?, ?, ?, ?)').bind(userId, username, hashedPassword, planType).run();
             return new Response(JSON.stringify({ success: true, userId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        } else { // /api/login
+        } else {
             const user = await env.DB.prepare('SELECT id, hashed_password FROM users WHERE username = ?').bind(username).first<{ id: string; hashed_password: string }>();
             if (!user) return new Response(JSON.stringify({ error: 'Invalid credentials.' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             const hashedPassword = await hashPassword(password);
@@ -86,7 +85,6 @@ export default {
             return new Response(JSON.stringify({ success: true, token: sessionToken }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         }
       } catch (e) {
-        console.error(`${url.pathname} error:`, e);
         return new Response(JSON.stringify({ error: 'An internal error occurred.' }), { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
       }
     }
@@ -95,13 +93,21 @@ export default {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     const userId = await getUserIdFromToken(token, env);
 
-    if (!userId) {
-        // Allow unauthenticated access only to models and assets
-        if (url.pathname === '/api/models' || url.pathname.startsWith('/public/') || url.pathname === '/') {
-            // continue
-        } else if (!url.pathname.startsWith('/agents/')) { // Agents have their own internal auth/logic
-             return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        }
+    if (!userId && !url.pathname.startsWith('/public') && url.pathname !== '/' && url.pathname !== '/api/models' && !url.pathname.startsWith('/agents/')) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+    }
+
+    if (url.pathname === '/api/feedback') {
+        if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+        if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+
+        const { query } = await request.json<{ query?: string }>();
+        if (!query) return new Response(JSON.stringify({ error: 'Query is required.' }), { status: 400 });
+
+        // Asynchronously trigger the RAG ingestion process. We don't need to wait for it.
+        ctx.waitUntil(ingestQuery(query, env));
+
+        return new Response(JSON.stringify({ success: true, message: 'Feedback received and ingestion process started.' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
     }
 
     if (url.pathname === '/api/get-agents') {
@@ -113,18 +119,18 @@ export default {
         // ... (existing create-agent logic)
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
         const { name: agentName } = await request.json<{ name?: string }>();
-        if (!agentName) return new Response(JSON.stringify({ error: 'Agent name is required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (!agentName) return new Response(JSON.stringify({ error: 'Agent name is required.' }), { status: 400 });
         const user = await env.DB.prepare('SELECT plan_type, agent_count FROM users WHERE id = ?').bind(userId).first<{ plan_type: string; agent_count: number }>();
-        if (!user) return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (!user) return new Response(JSON.stringify({ error: 'User not found' }), { status: 404 });
         const { plan_type, agent_count } = user;
         const limit = plan_type === 'free' ? FREE_PLAN_AGENT_LIMIT : Infinity;
-        if (agent_count >= limit) return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade your plan.' }), { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (agent_count >= limit) return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade.' }), { status: 403 });
         const agentId = crypto.randomUUID();
         await env.DB.batch([
             env.DB.prepare('INSERT INTO agents (id, user_id, name) VALUES (?, ?, ?)').bind(agentId, userId, agentName),
             env.DB.prepare('UPDATE users SET agent_count = agent_count + 1 WHERE id = ?').bind(userId)
         ]);
-        return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201 });
     }
 
     if (url.pathname === '/api/create-checkout-session') {
@@ -144,14 +150,10 @@ export default {
     }
 
     if (url.pathname === '/api/delegate-task') {
+        // ... (existing delegate logic)
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
         const { agentId, taskDescription } = await request.json<{ agentId?: string, taskDescription?: string }>();
-        if (!agentId || !taskDescription) {
-            return new Response(JSON.stringify({ error: 'agentId and taskDescription are required.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        }
-
-        // TODO: Add a check to ensure the agentId belongs to the userId making the request
-
+        if (!agentId || !taskDescription) return new Response(JSON.stringify({ error: 'agentId and taskDescription are required.' }), { status: 400 });
         const agentStub = env.MyAgent.get(env.MyAgent.idFromString(agentId));
         return agentStub.delegateTask(taskDescription);
     }

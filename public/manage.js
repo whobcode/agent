@@ -27,10 +27,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const authHeader = { 'Authorization': `Bearer ${token}` };
 
+    // --- State ---
+    let lastQuery = '';
+
     // --- Functions ---
     const setStatus = (text) => elements.status.textContent = `Status: ${text}`;
 
     const fetchAndPopulate = async (endpoint, selectElement, valueField, textField, defaultOption) => {
+        // ... (existing code)
         try {
             const response = await fetch(endpoint, { headers: authHeader });
             if (!response.ok) {
@@ -55,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const listMyAgents = async () => {
+        // ... (existing code)
         const myAgents = await fetchAndPopulate('/api/get-agents', elements.agentSelect, 'id', 'name', 'Select an agent');
         elements.agentList.innerHTML = '';
         if (myAgents && myAgents.length > 0) {
@@ -71,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const listModels = () => fetchAndPopulate('/api/models', elements.modelSelect, 'id', 'label', 'Select a model');
 
     const handleUpgrade = async () => {
-        // ... (existing upgrade logic)
+        // ... (existing code)
         setStatus('Redirecting to payment...');
         try {
             const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: authHeader });
@@ -84,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleCreateAgent = async (event) => {
-        // ... (existing create agent logic)
+        // ... (existing code)
         event.preventDefault();
         elements.upgradeSection.style.display = 'none';
         const agentName = elements.agentNameInput.value.trim();
@@ -113,17 +118,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const handleSendMessage = async () => {
-        // ... (existing send message logic)
-        const agentId = elements.agentSelect.value;
-        const model = elements.modelSelect.value;
-        const message = elements.userInput.value;
-        if (!agentId || !model || !message) {
-            alert('Please select an agent, a model, and enter a message.');
+    const handleFeedback = async () => {
+        // ... (existing code)
+        if (!lastQuery) {
+            alert('No recent query to provide feedback on.');
             return;
         }
-        setStatus('Sending chat message...');
-        elements.output.textContent = '';
+        setStatus(`Sending feedback for query: "${lastQuery}"`);
+        try {
+            const response = await fetch('/api/feedback', {
+                method: 'POST',
+                headers: { ...authHeader, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: lastQuery }),
+            });
+            if (!response.ok) throw new Error('Failed to send feedback.');
+            setStatus('Feedback received. The agent will learn from this.');
+        } catch (error) {
+            setStatus(`Error sending feedback: ${error.message}`);
+        }
+    };
+
+    const handleSendMessage = async () => {
+        const agentId = elements.agentSelect.value;
+        const model = elements.modelSelect.value; // This is now the synthesizer model
+        const message = elements.userInput.value;
+        lastQuery = message;
+
+        if (!agentId || !model || !message) {
+            alert('Please select an agent, a synthesizer model, and enter a message.');
+            return;
+        }
+
+        setStatus('Orchestrating response... (This may take a moment)');
+        elements.output.innerHTML = '';
+
+        const responseContainer = document.createElement('div');
+        const responseText = document.createElement('p');
+        responseContainer.appendChild(responseText);
+        elements.output.appendChild(responseContainer);
+
         try {
             const response = await fetch(`/agents/MyAgent/${agentId}`, {
                 method: 'POST',
@@ -131,6 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ type: 'chat', model, messages: [{ role: 'user', content: message }] }),
             });
             if (!response.body) throw new Error('No response body');
+
+            setStatus('Synthesizing final answer...');
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedText = '';
@@ -138,16 +173,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { done, value } = await reader.read();
                 if (done) break;
                 accumulatedText += decoder.decode(value, { stream: true });
-                elements.output.textContent = accumulatedText;
+                responseText.textContent = accumulatedText;
             }
             setStatus('Response complete.');
+
+            const feedbackButton = document.createElement('button');
+            feedbackButton.textContent = 'Mark as Incorrect';
+            feedbackButton.onclick = handleFeedback;
+            responseContainer.appendChild(feedbackButton);
+
         } catch (error) {
             console.error('Chat error:', error);
+            responseText.textContent = `Error: ${error.message}`;
             setStatus(`Error: ${error.message}`);
         }
     };
 
     const handleDelegateTask = async () => {
+        // ... (existing delegate logic)
         const agentId = elements.agentSelect.value;
         const taskDescription = elements.taskDescription.value.trim();
         if (!agentId || !taskDescription) {
