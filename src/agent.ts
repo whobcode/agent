@@ -13,12 +13,15 @@ export interface Env {
   DEEPSEEK_API_KEY: string;
   OPENAI_API_KEY: string;
   SERVICE_API_KEY: string;
+  STRIPE_API_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
 
   // Vars
   AI_ACCOUNT_ID: string;
   AI_GATEWAY_NAME: string;
   DEFAULT_SYSTEM_PROMPT: string;
   DEFAULT_MODEL_ID: string;
+  STRIPE_PRICE_ID: string;
 }
 
 // Define the expected request body for the chat
