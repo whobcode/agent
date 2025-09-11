@@ -1,9 +1,10 @@
 import { routeAgentRequest } from 'agents';
 import { MyAgent, Env } from './agent';
 import { MCPAgent } from './mcp';
+import { PromptAgentDurableObject } from './prompt_agent';
 import Stripe from 'stripe';
 
-export { MyAgent, MCPAgent };
+export { MyAgent, MCPAgent, PromptAgentDurableObject };
 
 // --- Constants ---
 const ADMIN_USERNAME = "admin";
@@ -160,6 +161,68 @@ export default {
         if (!agentId || !taskDescription) return new Response(JSON.stringify({ error: 'agentId and taskDescription are required.' }), { status: 400 });
         const agentStub = env.MyAgent.get(env.MyAgent.idFromString(agentId));
         return agentStub.delegateTask(taskDescription);
+    }
+
+    // --- NEW: Create a Prompt-based Agent ---
+    if (url.pathname === '/api/create-prompt-agent' && request.method === 'POST') {
+        if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+
+        try {
+            const { name, systemPrompt } = await request.json<{ name?: string; systemPrompt?: string }>();
+            if (!name || !systemPrompt) {
+                return new Response(JSON.stringify({ error: 'Agent name and systemPrompt are required.' }), { status: 400, headers: corsHeaders });
+            }
+
+            // Check plan limits, reusing the logic from the other agent creation endpoint
+            const user = await env.DB.prepare('SELECT plan_type, agent_count FROM users WHERE id = ?').bind(userId).first<{ plan_type: string; agent_count: number }>();
+            if (!user) return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: corsHeaders });
+
+            const limit = user.plan_type === 'free' ? FREE_PLAN_AGENT_LIMIT : Infinity;
+            if (user.agent_count >= limit) {
+                return new Response(JSON.stringify({ error: 'Agent limit reached. Please upgrade.' }), { status: 403, headers: corsHeaders });
+            }
+
+            const agentIdObject = env.PROMPT_AGENT_DO.newUniqueId();
+            const agentId = agentIdObject.toString();
+            const agentStub = env.PROMPT_AGENT_DO.get(agentIdObject);
+
+            // Initialize the new agent by sending its system prompt to its storage.
+            await agentStub.fetch(new Request('https://agent.internal/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ systemPrompt }),
+            }));
+
+            // Save agent to the database. Assuming an 'agents' table with a 'type' column.
+            await env.DB.batch([
+                env.DB.prepare('INSERT INTO agents (id, user_id, name, type) VALUES (?, ?, ?, ?)').bind(agentId, userId, name, 'prompt_agent'),
+                env.DB.prepare('UPDATE users SET agent_count = agent_count + 1 WHERE id = ?').bind(userId)
+            ]);
+
+            return new Response(JSON.stringify({ success: true, agentId: agentId }), { status: 201, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+            console.error('Error creating prompt agent:', errorMessage);
+            return new Response(JSON.stringify({ error: 'An internal error occurred.' }), { status: 500, headers: corsHeaders });
+        }
+    }
+
+    // --- NEW: Chat with a Prompt-based Agent ---
+    if (url.pathname.startsWith('/api/prompt-agents/') && url.pathname.endsWith('/chat') && request.method === 'POST') {
+        if (!userId) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+
+        try {
+            const pathSegments = url.pathname.split('/');
+            const agentId = pathSegments[3]; // expecting /api/prompt-agents/:id/chat
+
+            const idObject = env.PROMPT_AGENT_DO.idFromString(agentId);
+            const agentStub = env.PROMPT_AGENT_DO.get(idObject);
+
+            // Forward the request to the durable object. The DO expects a URL path of `/chat`.
+            return await agentStub.fetch(new Request('https://agent.internal/chat', request));
+        } catch (e) {
+            return new Response('Invalid Agent ID', { status: 400, headers: corsHeaders });
+        }
     }
 
     // --- Other Endpoints ---

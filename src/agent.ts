@@ -1,11 +1,13 @@
 import { Agent, AgentNamespace } from 'agents';
 import { MCPAgent } from './mcp';
+import { PromptAgentDurableObject } from './prompt_agent';
 
 // Define the environment bindings, including secrets and storage
 export interface Env {
   // Bindings
   MyAgent: AgentNamespace<MyAgent>;
   MCP: AgentNamespace<MCPAgent>;
+  PROMPT_AGENT_DO: AgentNamespace<PromptAgentDurableObject>;
   ASSETS: Fetcher;
   AI: Ai;
   DB: D1Database;
