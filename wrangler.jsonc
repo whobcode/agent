@@ -1,16 +1,16 @@
 {
-  "name": "chat4",
+  "name": "agents",
   "main": "src/index.ts",
-  "workers_dev": false,
+  "workers_dev": true,
   "compatibility_date": "2025-07-21",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "routes": [
     {
-      "pattern": "https://chat4.hwmnbn.me/",
+      "pattern": "https://agents.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     },
     {
-      "pattern": "http://chat4.hwmnbn.me/",
+      "pattern": "http://agents.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     }
   ],
@@ -62,15 +62,13 @@
     {
       "binding": "DB",
       "database_name": "chat-db",
-      "database_id": "7e986ff1-1205-417b-84ae-883683e9e82e",
-      "preview_database_id": "YOUR_D1_PREVIEW_DATABASE_ID"
+      "database_id": "7e986ff1-1205-417b-84ae-883683e9e82e"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "SESSIONS",
-      "id": "155713e242ad44fab31732e4dc53907a",
-      "preview_id": "YOUR_KV_PREVIEW_NAMESPACE_ID"
+      "id": "155713e242ad44fab31732e4dc53907a"
     }
   ],
   "r2_buckets": [
