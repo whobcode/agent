@@ -51,6 +51,10 @@
       {
         "name": "MCP",
         "class_name": "MCPAgent"
+      },
+      {
+        "name": "PROMPT_AGENT_DO",
+        "class_name": "PromptAgentDurableObject"
       }
     ]
   },
