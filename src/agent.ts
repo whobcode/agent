@@ -1,6 +1,8 @@
 import { Agent, AgentNamespace } from 'agents';
 import { MCPAgent } from './mcp';
 import { PromptAgentDurableObject } from './prompt_agent';
+import { createWorkersAI } from 'workers-ai-provider';
+import { streamText, generateText, CoreMessage } from 'ai';
 
 // Define the environment bindings, including secrets and storage
 export interface Env {
@@ -9,7 +11,7 @@ export interface Env {
   MCP: AgentNamespace<MCPAgent>;
   PROMPT_AGENT_DO: AgentNamespace<PromptAgentDurableObject>;
   ASSETS: Fetcher;
-  AI: Ai;
+  AI: Fetcher; // The AI binding is now a generic Fetcher for the AI Gateway
   DB: D1Database;
   SESSIONS: KVNamespace;
   AGENT_BUCKET: R2Bucket;
@@ -35,7 +37,7 @@ export interface Env {
 // Define the expected request body types
 interface ChatRequestBody {
   type: 'chat';
-  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  messages: CoreMessage[];
   model?: string; // This will now be used as the 'synthesizer' model
 }
 
@@ -108,12 +110,13 @@ export class MyAgent extends Agent<Env> {
     const synthesizerModel = body.model || '@cf/meta/llama-3.1-70b-instruct'; // Use a powerful model for synthesis
     const synthesisPrompt = this.createSynthesisPrompt(userQuery, context, parallelResponses);
 
-    const finalResponseStream = await this.env.AI.run(synthesizerModel, {
+    const workersai = createWorkersAI({ binding: this.env.AI });
+    const result = await streamText({
+        model: workersai(synthesizerModel),
         messages: [{ role: 'system', content: synthesisPrompt }],
-        stream: true,
     });
 
-    return new Response(finalResponseStream, { headers: this._corsHeaders('text/event-stream') });
+    return new Response(result.textStream, { headers: this._corsHeaders('text/event-stream') });
   }
 
   /**
@@ -122,10 +125,12 @@ export class MyAgent extends Agent<Env> {
   private async getExpertResponse(query: string, context: string, model: string): Promise<string> {
       const prompt = `Context: ${context}\n\nUser Query: ${query}\n\nBased on the context, answer the user's query.`;
       try {
-          const response = await this.env.AI.run(model, {
+          const workersai = createWorkersAI({ binding: this.env.AI });
+          const { text } = await generateText({
+              model: workersai(model),
               messages: [{ role: 'system', content: prompt }],
           });
-          return response.response || `Error from ${model}`;
+          return text || `Error from ${model}`;
       } catch (e) {
           console.error(`Error from model ${model}:`, e);
           return `Model ${model} failed to respond.`;

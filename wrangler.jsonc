@@ -1,16 +1,16 @@
 {
-  "name": "agents",
+  "name": "agent",
   "main": "src/index.ts",
   "workers_dev": true,
   "compatibility_date": "2025-07-21",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "routes": [
     {
-      "pattern": "https://agents.hwmnbn.me/",
+      "pattern": "https://agent.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     },
     {
-      "pattern": "http://agents.hwmnbn.me/",
+      "pattern": "http://agent.hwmnbn.me/",
       "zone_name": "hwmnbn.me"
     }
   ],
@@ -22,7 +22,8 @@
       "tag": "v3",
       "new_classes": [
         "MyAgent",
-        "MCPAgent"
+        "MCPAgent",
+	"PromptAgentDurableObject"
       ]      
     }
   ],

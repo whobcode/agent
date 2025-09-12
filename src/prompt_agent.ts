@@ -1,4 +1,5 @@
-import { Ai } from '@cloudflare/ai';
+import { createWorkersAI } from 'workers-ai-provider';
+import { streamText, CoreMessage } from 'ai';
 import { Env } from './agent'; // Import the shared Env interface
 
 /**
@@ -8,12 +9,10 @@ import { Env } from './agent'; // Import the shared Env interface
 export class PromptAgentDurableObject {
 	state: DurableObjectState;
 	env: Env;
-	ai: Ai;
 
 	constructor(state: DurableObjectState, env: Env) {
 		this.state = state;
 		this.env = env;
-		this.ai = new Ai(env.AI);
 	}
 
 	/**
@@ -63,27 +62,31 @@ export class PromptAgentDurableObject {
 
 			// Retrieve the agent's persona and conversation history from storage.
 			const systemPrompt = (await this.state.storage.get<string>('systemPrompt')) || this.env.DEFAULT_SYSTEM_PROMPT;
-			const history = (await this.state.storage.get<any[]>('history')) || [];
+			const history = (await this.state.storage.get<CoreMessage[]>('history')) || [];
 
-			const messages = [
+			const messages: CoreMessage[] = [
 				{ role: 'system', content: systemPrompt },
 				...history,
 				{ role: 'user', content: message },
 			];
 
-			// Execute the AI model and get a stream.
-			const stream = await this.ai.run('@cf/meta/llama-3-8b-instruct', {
+            // Use the new provider and Vercel AI SDK
+            const workersai = createWorkersAI({ binding: this.env.AI });
+			const result = await streamText({
+				model: workersai('@cf/meta/llama-3-8b-instruct'),
 				messages,
-				stream: true,
 			});
 
-			// We need to process the stream to save the full response to history,
-			// while still sending the raw stream to the user for low latency.
-			const { readable, writable } = new TransformStream();
-			this.saveHistory(stream, writable, messages).catch(console.error);
+            // The result object from streamText contains the stream.
+            // We fork the stream to be able to read it for history and also send it to the client.
+            const [historyStream, clientStream] = result.textStream.tee();
 
-			return new Response(readable, {
-				headers: { 'Content-Type': 'text/event-stream', ...this.corsHeaders() },
+            // Save history in the background without awaiting it, so we can stream response to client immediately.
+            this.saveHistory(historyStream, messages).catch(console.error);
+
+            // Return the stream to the client
+			return new Response(clientStream, {
+				headers: { 'Content-Type': 'text/plain; charset=utf-8', ...this.corsHeaders() },
 			});
 		} catch (e: any) {
 			console.error('Error in handleChat:', e);
@@ -92,44 +95,23 @@ export class PromptAgentDurableObject {
 	}
 
 	/**
-	 * Reads the AI's response stream, saves the complete response to history,
-	 * and forwards the stream to the client.
+	 * Reads one of the forked streams to completion to get the full response and save it to history.
 	 */
-	private async saveHistory(stream: ReadableStream, writable: WritableStream, messages: any[]) {
+	private async saveHistory(stream: ReadableStream, messages: CoreMessage[]) {
 		const reader = stream.getReader();
-		const writer = writable.getWriter();
 		let fullResponse = '';
 
 		try {
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
-
-				const chunk = new TextDecoder().decode(value);
-				// SSE streams have a "data: " prefix. We need to parse it to get the content.
-				const lines = chunk.split('\n');
-				for (const line of lines) {
-					if (line.startsWith('data: ')) {
-						const content = line.substring(6);
-						if (content.trim() === '[DONE]') {
-							continue;
-						}
-						try {
-							const { response } = JSON.parse(content);
-							fullResponse += response;
-						} catch (e) {
-							// Ignore parsing errors for non-JSON parts of the stream
-						}
-					}
-				}
-				// Forward the raw chunk to the client
-				await writer.write(value);
+                // The Vercel AI SDK stream provides raw text chunks, which we decode and concatenate.
+				fullResponse += new TextDecoder().decode(value);
 			}
 
 			// Update the history with the user's message and the AI's full response.
-			// We slice the messages array to remove the system prompt before saving.
-			const newHistory = [
-				...messages.slice(1),
+			const newHistory: CoreMessage[] = [
+				...messages.slice(1), // Exclude system prompt from history
 				{ role: 'assistant', content: fullResponse },
 			];
 
@@ -137,8 +119,6 @@ export class PromptAgentDurableObject {
 			await this.state.storage.put('history', newHistory);
 		} catch (err) {
 			console.error('Error saving history:', err);
-		} finally {
-			writer.close();
 		}
 	}
 
