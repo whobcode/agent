@@ -22,9 +22,14 @@
       "tag": "v3",
       "new_classes": [
         "MyAgent",
-        "MCPAgent",
-	"PromptAgentDurableObject"
-      ]      
+        "MCPAgent"
+      ]
+    },
+    {
+      "tag": "v4-prompt-agent",
+      "new_classes": [
+        "PromptAgentDurableObject"
+      ]
     }
   ],
   "assets": {
@@ -39,7 +44,6 @@
     "DEFAULT_MODEL_ID": "deepseek-v3.1",
     "DEFAULT_SYSTEM_PROMPT": "You are a helpful AI agent.",
     "AI_GATEWAY_ENDPOINT": "https://gateway.ai.cloudflare.com/v1/moongate",
-    "AI_ACCOUNT_ID": "93e0a6dda0f48d77b387cae708297820 ",
     "STRIPE_PRICE_ID": "YOUR_STRIPE_PRICE_ID",
     "AUTORAG_PROJECT_NAME": "whoblevi"
   },

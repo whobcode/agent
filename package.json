@@ -1,5 +1,5 @@
 {
-	"name": "chat4",
+	"name": "agent",
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
@@ -10,7 +10,7 @@
 	"devDependencies": {
 		"agents": "^0.0.113",
 		"typescript": "^5.9.2",
-		"wrangler": "^4.32.0"
+		"wrangler": "^4.35.0"
 	},
 	"dependencies": {
 		"@cloudflare/puppeteer": "^1.0.4",

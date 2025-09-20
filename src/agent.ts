@@ -9,7 +9,9 @@ export interface Env {
   // Bindings
   MyAgent: AgentNamespace<MyAgent>;
   MCP: AgentNamespace<MCPAgent>;
-  PROMPT_AGENT_DO: AgentNamespace<PromptAgentDurableObject>;
+  // PromptAgentDurableObject is a plain Durable Object (not an `Agent`),
+  // so its binding must be a `DurableObjectNamespace`, not `AgentNamespace`.
+  PROMPT_AGENT_DO: DurableObjectNamespace<PromptAgentDurableObject>;
   ASSETS: Fetcher;
   AI: Fetcher; // The AI binding is now a generic Fetcher for the AI Gateway
   DB: D1Database;
