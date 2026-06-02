@@ -44,7 +44,7 @@
     "DEFAULT_MODEL_ID": "deepseek-v3.1",
     "DEFAULT_SYSTEM_PROMPT": "You are a helpful AI agent.",
     "AI_GATEWAY_ENDPOINT": "https://gateway.ai.cloudflare.com/v1/moongate",
-    "STRIPE_PRICE_ID": "YOUR_STRIPE_PRICE_ID",
+    "STRIPE_PRICE_ID": "YOUR_STRIPE_PRICE_ID", // <-- replace with your Stripe price id (price_...)
     "AUTORAG_PROJECT_NAME": "whoblevi"
   },
   "durable_objects": {
